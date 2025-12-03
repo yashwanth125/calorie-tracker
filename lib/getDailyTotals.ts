@@ -1,0 +1,34 @@
+import { supabase } from "./supabase";
+
+export async function getDailyTotals() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  // Get today's date (00:00)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .select("totals, created_at")
+    .eq("user_id", user.id)           // 👈 filter by logged-in user
+    .gte("created_at", today.toISOString());
+
+  if (error) {
+    console.error("Error fetching logs:", error);
+    return null;
+  }
+
+  // Sum totals from JSON
+  const summary = data.reduce(
+    (acc, item) => ({
+      calories: acc.calories + (item.totals.calories || 0),
+      protein: acc.protein + (item.totals.protein_g || 0),
+      carbs: acc.carbs + (item.totals.carbs_g || 0),
+      fat: acc.fat + (item.totals.fat_g || 0),
+    }),
+    { calories: 0, protein: 0, carbs: 0, fat: 0 }
+  );
+
+  return summary;
+}

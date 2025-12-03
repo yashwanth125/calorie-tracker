@@ -3,7 +3,8 @@
 
 import { useState } from 'react';
 import { Camera, Upload, Loader2, AlertCircle } from 'lucide-react';
-
+import { supabase } from "@/lib/supabase";
+import { DailyNutrition } from './DailyNutrition';
 interface Food {
   name: string;
   portion: string;
@@ -31,6 +32,7 @@ export default function CalorieCalculator() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<NutritionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -50,52 +52,51 @@ export default function CalorieCalculator() {
     setResult(null);
   
     try {
-      // ✅ Convert image to base64 using Promise
-      const base64Image = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve((reader.result as string).split(',')[1]);
-        reader.onerror = () => reject('Failed to read image');
-        reader.readAsDataURL(image);
-      });
-  
-      // ✅ Use Vite-style env for Ionic / React builds
-      const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-      if (!apiKey) throw new Error('Please add VITE_GEMINI_API_KEY or NEXT_PUBLIC_GEMINI_API_KEY');
-  
-      // ✅ Call Gemini API
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: `Analyze this food image and provide detailed nutrition info in JSON format:
-  {
-    "foods": [
-      {
-        "name": "food name",
-        "portion": "estimated portion with units",
-        "calories": number,
-        "protein_g": number,
-        "carbs_g": number,
-        "fat_g": number
-      }
-    ],
-    "totals": {
-      "calories": number,
-      "protein_g": number,
-      "carbs_g": number,
-      "fat_g": number
-    },
-    "confidence": "high|medium|low",
-    "notes": "any relevant observations"
-  }
-  
-  Be specific about portions. If multiple items, list each separately. Be conservative with calorie estimates.`,
+        // ✅ Convert image to base64 using Promise
+        const base64Image = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+          reader.onerror = () => reject('Failed to read image');
+          reader.readAsDataURL(image);
+        });
+    
+        // ✅ Use Vite-style env for Ionic / React builds
+        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+        if (!apiKey) throw new Error('Please add VITE_GEMINI_API_KEY or NEXT_PUBLIC_GEMINI_API_KEY');
+    
+        // ✅ Call Gemini API
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: `Analyze this food image and provide detailed nutrition info in JSON format:
+                        {
+                          "foods": [
+                            {
+                              "name": "food name",
+                              "portion": "estimated portion with units",
+                              "calories": number,
+                              "protein_g": number,
+                              "carbs_g": number,
+                              "fat_g": number
+                            }
+                          ],
+                          "totals": {
+                            "calories": number,
+                            "protein_g": number,
+                            "carbs_g": number,
+                            "fat_g": number
+                          },
+                          "confidence": "high|medium|low",
+                          "notes": "any relevant observations"
+                        }
+                    Be specific about portions. If multiple items, list each separately. Be conservative with calorie estimates.`,
                   },
                   {
                     inline_data: {
@@ -137,6 +138,31 @@ export default function CalorieCalculator() {
     setResult(null);
     setError(null);
   };
+
+
+  async function saveNutrition(result: any, imageUrl?: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+  
+    if (!user) throw new Error("User not logged in");
+  
+    const { error } = await supabase.from("nutrition_logs").insert({
+      user_id: user.id,
+      image_url: imageUrl || null,
+      foods: result.foods,
+      totals: result.totals,
+      confidence: result.confidence,
+      notes: result.notes || null
+    });
+  
+    if (error) {
+      console.error("Insert failed:", error);
+      throw error;
+    }
+  
+    return true;
+  }
+
+  
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -292,6 +318,17 @@ export default function CalorieCalculator() {
                     </button>
                     <button
                       className="flex-1 bg-indigo-600 text-white py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+                      onClick={async () => {
+                        try {
+                          await saveNutrition(result);
+                          setToast("Saved to your daily log!");
+                          setTimeout(() => setToast(null), 3000);
+                        } catch {
+                          setToast("Failed to save. Try again.");
+                          setTimeout(() => setToast(null), 3000);
+                        }
+                      }}
+                      
                     >
                       Save to Log
                     </button>
@@ -307,6 +344,13 @@ export default function CalorieCalculator() {
           <p>💡 Tip: Take photos from directly above for best results</p>
         </div>
       </div>
+      {toast && (
+      <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2
+                      bg-indigo-600 text-white px-6 py-3 rounded-full shadow-lg
+                      animate-in fade-in duration-300">
+        {toast}
+      </div>
+    )}
     </div>
   );
 }
