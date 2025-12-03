@@ -6,7 +6,6 @@ import { useEffect, useState } from 'react';
 export default function Navbar() {
   const [user, setUser] = useState<any>(null);
 
-  // Listen to auth state
   useEffect(() => {
     const getUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -15,13 +14,21 @@ export default function Navbar() {
 
     getUser();
 
-    // Listen to future changes
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
 
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  async function login() {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `window.location.origin`
+      }
+    });
+  }
 
   async function logout() {
     await supabase.auth.signOut();
@@ -32,21 +39,19 @@ export default function Navbar() {
       <h1 className="text-xl font-bold text-indigo-600">AI Calorie Tracker</h1>
 
       <div className="flex items-center gap-4">
-        {/* Show user name if logged in */}
         {user && (
           <span className="text-gray-700 font-medium">
             Hi, {user.user_metadata?.full_name || user.email}
           </span>
         )}
 
-        {/* Show Login OR Logout */}
         {!user ? (
-          <a
-            href="/login"
+          <button
+            onClick={login}
             className="bg-indigo-600 text-white rounded-lg px-4 py-2"
           >
             Sign In
-          </a>
+          </button>
         ) : (
           <button
             onClick={logout}
